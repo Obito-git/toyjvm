@@ -1,8 +1,9 @@
 use std::fmt::{self, Display, Formatter};
+use crate::class_file::cursor::Cursor;
+use crate::class_file::{JvmError};
+use crate::runtime::data::runtime_constant_pool::RuntimeConstantPool;
 
-use crate::{constant_pool::ConstantInfo, cursor::Cursor, ParseError};
-
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ExceptionTableEntry {
     start_pc: u16,
     end_pc: u16,
@@ -10,12 +11,12 @@ struct ExceptionTableEntry {
     catch_type: u16,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct LineNumberEntry {
     start_pc: u16,
     line_number: u16,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct LocalVariableEntry {
     start_pc: u16,
     length: u16,
@@ -24,24 +25,33 @@ struct LocalVariableEntry {
     index: u16,
 }
 
-#[derive(Debug)]
-pub enum AttributeInfo {
+/// https://docs.oracle.com/javase/specs/jvms/se23/html/jvms-4.html#jvms-4.7
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClassAttribute {
+    SourceFile { sourcefile_index: u16 },
+    Unknown { name_index: u16, info: Vec<u8> },
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MethodAttribute {
     Code {
         max_stack: u16,
         max_locals: u16,
         code: Vec<u8>,
         exception_table: Vec<ExceptionTableEntry>,
-        attributes: Vec<AttributeInfo>,
+        attributes: Vec<CodeAttribute>,
     },
+    Unknown {
+        name_index: u16,
+        info: Vec<u8>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CodeAttribute {
     LineNumberTable(Vec<LineNumberEntry>),
     LocalVariableTable(Vec<LocalVariableEntry>),
-    Unsupported {
-        name_index: u16,
-        data: Vec<u8>,
-    },
-    SourceFile {
-        sourcefile_index: u16,
-    },
+    Unknown { name_index: u16, info: Vec<u8> },
 }
 //attribute_name_index: u16,
 //info: Vec<u8>,
@@ -51,33 +61,42 @@ pub const ATTR_CODE: &[u8] = b"Code";
 pub const ATTR_LOCAL_VARIABLE_TABLE: &[u8] = b"LocalVariableTable";
 pub const ATTR_LINE_NUMBER_TABLE: &[u8] = b"LineNumberTable";
 pub const ATTR_SOURCE_FILE: &[u8] = b"SourceFile";
-//const CODE_ATTR_NAME: &[u8] = &[b'C', b'o', b'd', b'e'];
 
-impl<'a> AttributeInfo {
+impl<'a> ClassAttribute {
     pub(crate) fn read(
-        constant_pool: &[ConstantInfo],
+        constant_pool: &RuntimeConstantPool,
         cursor: &mut Cursor<'a>,
-    ) -> Result<Self, ParseError> {
+    ) -> Result<Self, JvmError> {
         let attribute_name_index = cursor.u16()?;
         let attribute_length = cursor.u32()? as usize;
 
-        let utf8 = match constant_pool.get(attribute_name_index as usize - 1) {
-            Some(ConstantInfo::Utf8(bytes)) => bytes.as_slice(),
-            _ => return Err(ParseError::AttributeShouldBeUtf8),
-        };
-
+        let utf8 = constant_pool.get_utf8(attribute_name_index)?.as_bytes();
         match utf8 {
-            ATTR_LINE_NUMBER_TABLE => {
-                let line_number_table_length = cursor.u16()? as usize;
-                let mut line_number_table = Vec::with_capacity(line_number_table_length);
-                for _ in 0..line_number_table_length {
-                    line_number_table.push(LineNumberEntry {
-                        start_pc: cursor.u16()?,
-                        line_number: cursor.u16()?,
-                    });
-                }
-                Ok(AttributeInfo::LineNumberTable(line_number_table))
+            ATTR_SOURCE_FILE => Ok(ClassAttribute::SourceFile {
+                sourcefile_index: cursor.u16()?,
+            }),
+            _ => {
+                let mut buf = vec![0u8; attribute_length];
+                cursor.read_exact(&mut buf)?;
+                Ok(ClassAttribute::Unknown {
+                    name_index: attribute_name_index,
+                    info: buf,
+                })
             }
+        }
+    }
+}
+
+impl<'a> MethodAttribute {
+    pub(crate) fn read(
+        constant_pool: &RuntimeConstantPool,
+        cursor: &mut Cursor<'a>,
+    ) -> Result<Self, JvmError> {
+        let attribute_name_index = cursor.u16()?;
+        let attribute_length = cursor.u32()? as usize;
+
+        let utf8 = constant_pool.get_utf8(attribute_name_index)?.as_bytes();
+        match utf8 {
             ATTR_CODE => {
                 let max_stack = cursor.u16()?;
                 let max_locals = cursor.u16()?;
@@ -100,16 +119,49 @@ impl<'a> AttributeInfo {
                 let attributes_count = cursor.u16()? as usize;
                 let mut attributes = Vec::with_capacity(attributes_count);
                 for _ in 0..attributes_count {
-                    attributes.push(AttributeInfo::read(constant_pool, cursor)?);
+                    attributes.push(CodeAttribute::read(constant_pool, cursor)?);
                 }
 
-                Ok(AttributeInfo::Code {
+                Ok(MethodAttribute::Code {
                     max_stack,
                     max_locals,
                     code,
                     exception_table,
                     attributes,
                 })
+            }
+            _ => {
+                let mut buf = vec![0u8; attribute_length];
+                cursor.read_exact(&mut buf)?;
+                Ok(MethodAttribute::Unknown {
+                    name_index: attribute_name_index,
+                    info: buf,
+                })
+            }
+        }
+    }
+}
+
+impl<'a> CodeAttribute {
+    pub(crate) fn read(
+        constant_pool: &RuntimeConstantPool,
+        cursor: &mut Cursor<'a>,
+    ) -> Result<Self, JvmError> {
+        let attribute_name_index = cursor.u16()?;
+        let attribute_length = cursor.u32()? as usize;
+
+        let utf8 = constant_pool.get_utf8(attribute_name_index)?.as_bytes();
+        match utf8 {
+            ATTR_LINE_NUMBER_TABLE => {
+                let line_number_table_length = cursor.u16()? as usize;
+                let mut line_number_table = Vec::with_capacity(line_number_table_length);
+                for _ in 0..line_number_table_length {
+                    line_number_table.push(LineNumberEntry {
+                        start_pc: cursor.u16()?,
+                        line_number: cursor.u16()?,
+                    });
+                }
+                Ok(CodeAttribute::LineNumberTable(line_number_table))
             }
             ATTR_LOCAL_VARIABLE_TABLE => {
                 let local_variable_table_length = cursor.u16()?;
@@ -129,27 +181,40 @@ impl<'a> AttributeInfo {
                         index,
                     });
                 }
-                Ok(AttributeInfo::LocalVariableTable(local_variable_table))
+                Ok(CodeAttribute::LocalVariableTable(local_variable_table))
             }
-            ATTR_SOURCE_FILE => Ok(AttributeInfo::SourceFile {
-                sourcefile_index: cursor.u16()?,
-            }),
             _ => {
                 let mut buf = vec![0u8; attribute_length];
                 cursor.read_exact(&mut buf)?;
-                Ok(AttributeInfo::Unsupported {
+                Ok(CodeAttribute::Unknown {
                     name_index: attribute_name_index,
-                    data: buf,
+                    info: buf,
                 })
             }
         }
     }
 }
 
-impl Display for AttributeInfo {
+impl Display for ClassAttribute {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            AttributeInfo::Code {
+            ClassAttribute::SourceFile { sourcefile_index } => {
+                write!(f, "SourceFile(sourcefile_index: {})", sourcefile_index)
+            }
+            ClassAttribute::Unknown { name_index, info } => write!(
+                f,
+                "Unsupported(name_index: {}, data: {} bytes)",
+                name_index,
+                info.len()
+            ),
+        }
+    }
+}
+
+impl Display for MethodAttribute {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            MethodAttribute::Code {
                 max_stack,
                 max_locals,
                 code,
@@ -183,24 +248,30 @@ impl Display for AttributeInfo {
                 }
                 write!(f, ")")
             }
-
-            AttributeInfo::LineNumberTable(table) => {
-                write!(f, "LineNumberTable{:?}", table)
-            }
-
-            AttributeInfo::LocalVariableTable(table) => {
-                write!(f, "LocalVariableTable{:?}", table)
-            }
-
-            AttributeInfo::SourceFile { sourcefile_index } => {
-                write!(f, "SourceFile(sourcefile_index: {})", sourcefile_index)
-            }
-
-            AttributeInfo::Unsupported { name_index, data } => write!(
+            MethodAttribute::Unknown { name_index, info } => write!(
                 f,
                 "Unsupported(name_index: {}, data: {} bytes)",
                 name_index,
-                data.len()
+                info.len()
+            ),
+        }
+    }
+}
+
+impl Display for CodeAttribute {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            CodeAttribute::LineNumberTable(table) => {
+                write!(f, "LineNumberTable{:?}", table)
+            }
+            CodeAttribute::LocalVariableTable(table) => {
+                write!(f, "LocalVariableTable{:?}", table)
+            }
+            CodeAttribute::Unknown { name_index, info } => write!(
+                f,
+                "Unsupported(name_index: {}, data: {} bytes)",
+                name_index,
+                info.len()
             ),
         }
     }

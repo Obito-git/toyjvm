@@ -3,12 +3,12 @@ use std::fmt;
 /// https://docs.oracle.com/javase/specs/jvms/se23/html/jvms-4.html#jvms-4.1
 /// Table 4.1-B. Class access and property modifiers
 #[derive(Debug, Clone, Copy)]
-pub struct ClassAccessFlag(u16);
+pub struct ClassAccessFlag(pub u16);
 
 /// https://docs.oracle.com/javase/specs/jvms/se23/html/jvms-4.html#jvms-4.6
 /// Table 4.6-A. Method access and property flags
 #[derive(Debug, Clone, Copy)]
-pub struct MethodAccessFlag(u16);
+pub struct MethodAccessFlag(pub u16);
 
 impl ClassAccessFlag {
     pub fn new(value: u16) -> Self {

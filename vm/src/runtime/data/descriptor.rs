@@ -1,64 +1,22 @@
-use std::iter::Peekable;
-
-use crate::java_type::JavaType;
-
+use crate::runtime::method_area::java::jtype::Type;
+use crate::class_file::{JvmError, MethodDescriptorErr};
 //TODO: probably use global err
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MethodDescriptorErr {
-    ShouldStartWithParentheses,
-    MissingClosingParenthesis,
-    UnexpectedEnd,
-    InvalidType,
-    TrailingCharacters,
-}
 
-/// https://docs.oracle.com/javase/specs/jvms/se23/html/jvms-4.html#jvms-4.3.2
+/// https://docs.oracle.com/javase/specs/jvms/se23/html/jvms-4.html#jvms-4.3
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MethodDescriptor {
-    params: Vec<JavaType>,
-    ret: JavaType,
-}
-
-impl MethodDescriptor {
-    fn parse_type<I>(it: &mut Peekable<I>) -> Result<JavaType, MethodDescriptorErr>
-    where
-        I: Iterator<Item = char>,
-    {
-        let c = it.next().ok_or(MethodDescriptorErr::UnexpectedEnd)?;
-
-        if let Ok(base) = JavaType::try_from(c) {
-            return Ok(base);
-        }
-
-        match c {
-            'L' => {
-                let mut instance_name = String::new();
-                while let Some(&next) = it.peek() {
-                    it.next();
-                    if next == ';' {
-                        return Ok(JavaType::Instance(instance_name));
-                    }
-                    instance_name.push(next);
-                }
-                Err(MethodDescriptorErr::UnexpectedEnd)
-            }
-            '[' => {
-                let elem = Self::parse_type(it)?;
-                Ok(JavaType::Array(Box::new(elem)))
-            }
-            _ => Err(MethodDescriptorErr::InvalidType),
-        }
-    }
+    params: Vec<Type>,
+    ret: Type,
 }
 
 impl TryFrom<&str> for MethodDescriptor {
-    type Error = MethodDescriptorErr;
+    type Error = JvmError;
 
     fn try_from(desc: &str) -> Result<Self, Self::Error> {
         let mut chars = desc.chars().peekable();
 
         if chars.next() != Some('(') {
-            return Err(MethodDescriptorErr::ShouldStartWithParentheses);
+            return Err(JvmError::MethodDescriptor(MethodDescriptorErr::ShouldStartWithParentheses));
         }
 
         let mut params = Vec::new();
@@ -68,15 +26,15 @@ impl TryFrom<&str> for MethodDescriptor {
                     chars.next();
                     break;
                 }
-                Some(_) => params.push(Self::parse_type(&mut chars)?),
-                None => return Err(MethodDescriptorErr::MissingClosingParenthesis),
+                Some(_) => params.push(Type::try_recursive(&mut chars)?),
+                None => return Err(JvmError::MethodDescriptor(MethodDescriptorErr::MissingClosingParenthesis)),
             }
         }
 
-        let ret = Self::parse_type(&mut chars)?;
+        let ret = Type::try_recursive(&mut chars)?;
 
         if chars.next().is_some() {
-            return Err(MethodDescriptorErr::TrailingCharacters);
+            return Err(JvmError::MethodDescriptor(MethodDescriptorErr::TrailingCharacters));
         }
 
         Ok(MethodDescriptor { params, ret })
@@ -92,8 +50,8 @@ mod tests {
     fn parse_two_ints_void() {
         // given
         let signature = "(II)V";
-        let expected_param = vec![JavaType::Int, JavaType::Int];
-        let expected_ret = JavaType::Void;
+        let expected_param = vec![Type::Int, Type::Int];
+        let expected_ret = Type::Void;
 
         // when
         let md = MethodDescriptor::try_from(signature).unwrap();
@@ -108,8 +66,8 @@ mod tests {
     fn parse_no_params_int_return() {
         // given
         let signature = "()I";
-        let expected_param: Vec<JavaType> = Vec::new();
-        let expected_ret = JavaType::Int;
+        let expected_param: Vec<Type> = Vec::new();
+        let expected_ret = Type::Int;
 
         // when
         let md = MethodDescriptor::try_from(signature).unwrap();
@@ -124,8 +82,8 @@ mod tests {
     fn parse_string_param_string_return() {
         // given
         let signature = "(Ljava/lang/String;)Ljava/lang/String;";
-        let expected_param = vec![JavaType::Instance("java/lang/String".into())];
-        let expected_ret = JavaType::Instance("java/lang/String".into());
+        let expected_param = vec![Type::Instance("java/lang/String".into())];
+        let expected_ret = Type::Instance("java/lang/String".into());
 
         // when
         let md = MethodDescriptor::try_from(signature).unwrap();
@@ -141,10 +99,10 @@ mod tests {
         // given
         let signature = "(I[Ljava/lang/String;)[I";
         let expected_param = vec![
-            JavaType::Int,
-            JavaType::Array(Box::new(JavaType::Instance("java/lang/String".into()))),
+            Type::Int,
+            Type::Array(Box::new(Type::Instance("java/lang/String".into()))),
         ];
-        let expected_ret = JavaType::Array(Box::new(JavaType::Int));
+        let expected_ret = Type::Array(Box::new(Type::Int));
 
         // when
         let md = MethodDescriptor::try_from(signature).unwrap();
@@ -159,8 +117,8 @@ mod tests {
     fn parse_multi_dimensional_arrays() {
         // given
         let signature = "([[Ljava/lang/Object;)[[Ljava/lang/Object;";
-        let obj = JavaType::Instance("java/lang/Object".into());
-        let two_d_obj = JavaType::Array(Box::new(JavaType::Array(Box::new(obj.clone()))));
+        let obj = Type::Instance("java/lang/Object".into());
+        let two_d_obj = Type::Array(Box::new(Type::Array(Box::new(obj.clone()))));
         let expected_param = vec![two_d_obj.clone()];
         let expected_ret = two_d_obj;
 

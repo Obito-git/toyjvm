@@ -1,34 +1,35 @@
 use core::fmt;
-
-use crate::{attribute::AttributeInfo, constant_pool::ConstantInfo, cursor::Cursor, ParseError};
+use crate::class_file::cursor::Cursor;
+use crate::class_file::JvmError;
+use crate::runtime::data::runtime_constant_pool::RuntimeConstantPool;
 
 #[derive(Debug)]
 pub struct FieldInfo {
     access_flags: u16,
     name_index: u16,
     descriptor_index: u16,
-    attributes: Vec<AttributeInfo>,
+    //attributes: Vec<AttributeInfo>,
 }
 
 impl<'a> FieldInfo {
     pub(crate) fn read(
-        constant_pool: &Vec<ConstantInfo>,
+        _constant_pool: &RuntimeConstantPool,
         cursor: &mut Cursor<'a>,
-    ) -> Result<Self, ParseError> {
+    ) -> Result<Self, JvmError> {
         let access_flags = cursor.u16()?;
         let name_index = cursor.u16()?;
         let descriptor_index = cursor.u16()?;
         let attributes_count = cursor.u16()?;
-        let mut attributes = Vec::with_capacity(attributes_count as usize);
+        //let mut attributes = Vec::with_capacity(attributes_count as usize);
         for _ in 0..attributes_count {
-            attributes.push(AttributeInfo::read(constant_pool, cursor)?);
+            //attributes.push(AttributeInfo::read(constant_pool, cursor)?);
         }
 
         Ok(FieldInfo {
             access_flags,
             name_index,
             descriptor_index,
-            attributes,
+            //attributes,
         })
     }
 }
@@ -41,12 +42,14 @@ impl fmt::Display for FieldInfo {
             self.access_flags, self.name_index, self.descriptor_index
         )?;
 
+        /*
         for (i, attr) in self.attributes.iter().enumerate() {
             if i != 0 {
                 write!(f, ", ")?;
             }
             write!(f, "{}", attr)?;
         }
+         */
 
         write!(f, "]")
     }

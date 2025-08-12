@@ -1,53 +1,64 @@
-use std::fmt;
-
-use attribute::AttributeInfo;
+use crate::class_file::attribute::ClassAttribute;
+use crate::runtime::data::runtime_constant_pool::RuntimeConstantPool;
 use constant_pool::ConstantInfo;
 use cursor::Cursor;
 use field::FieldInfo;
 use method::MethodInfo;
+use std::fmt;
 
-mod attribute;
-mod constant_pool;
-mod cursor;
+pub mod attribute;
+pub mod constant_pool;
+pub mod cursor;
 mod field;
-mod method;
+pub mod method;
 
 /// https://docs.oracle.com/javase/specs/jvms/se23/html/jvms-4.html
 #[derive(Debug)]
 pub struct ClassFile {
-    minor_version: u16,
-    major_version: u16,
-    constant_pool: Vec<ConstantInfo>,
-    access_flags: u16,
-    this_class: u16,
-    super_class: u16,
-    interfaces: Vec<u16>,
-    fields: Vec<FieldInfo>,
-    methods: Vec<MethodInfo>,
-    attributes: Vec<AttributeInfo>,
+    pub minor_version: u16,
+    pub major_version: u16,
+    pub constant_pool: RuntimeConstantPool,
+    pub access_flags: u16,
+    pub this_class: u16,
+    pub super_class: u16,
+    pub interfaces: Vec<u16>,
+    pub fields: Vec<FieldInfo>,
+    pub methods: Vec<MethodInfo>,
+    pub attributes: Vec<ClassAttribute>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MethodDescriptorErr {
+    ShouldStartWithParentheses,
+    MissingClosingParenthesis,
+    UnexpectedEnd,
+    InvalidType,
+    TrailingCharacters,
 }
 
 #[derive(Debug)]
-pub enum ParseError {
+pub enum JvmError {
     WrongMagic,
     UnexpectedEof,
     UnknownTag(u8),
     TrailingBytes,
     MissingAttributeInConstantPoll,
-    AttributeShouldBeUtf8,
+    TypeError,
+    MethodDescriptor(MethodDescriptorErr),
+    ConstantNotFoundInRuntimePool,
 }
 
 impl ClassFile {
     const MAGIC: u32 = 0xCAFEBABE;
-    fn validate_magic(val: u32) -> Result<(), ParseError> {
+    fn validate_magic(val: u32) -> Result<(), JvmError> {
         (val == ClassFile::MAGIC)
             .then_some(())
-            .ok_or(ParseError::WrongMagic)
+            .ok_or(JvmError::WrongMagic)
     }
 }
 
 impl TryFrom<Vec<u8>> for ClassFile {
-    type Error = ParseError;
+    type Error = JvmError;
 
     fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
         let mut cursor = Cursor::new(&value);
@@ -56,10 +67,12 @@ impl TryFrom<Vec<u8>> for ClassFile {
         let minor_version = cursor.u16()?;
         let major_version = cursor.u16()?;
         let constant_pool_count = cursor.u16()?;
-        let mut constant_pool = Vec::with_capacity(constant_pool_count as usize);
+        let mut constant_pool_entries = Vec::with_capacity((constant_pool_count + 1) as usize);
+        constant_pool_entries.push(ConstantInfo::Dummy);
         for _ in 1..constant_pool_count {
-            constant_pool.push(ConstantInfo::read(&mut cursor)?);
+            constant_pool_entries.push(ConstantInfo::read(&mut cursor)?);
         }
+        let constant_pool = RuntimeConstantPool::new(constant_pool_entries);
         let access_flags = cursor.u16()?;
         let this_class = cursor.u16()?;
         let super_class = cursor.u16()?;
@@ -81,11 +94,11 @@ impl TryFrom<Vec<u8>> for ClassFile {
         let attributes_count = cursor.u16()?;
         let mut attributes = Vec::with_capacity(attributes_count as usize);
         for _ in 0..attributes_count {
-            attributes.push(AttributeInfo::read(&constant_pool, &mut cursor)?);
+            attributes.push(ClassAttribute::read(&constant_pool, &mut cursor)?);
         }
 
         if cursor.u8().is_ok() {
-            Err(ParseError::TrailingBytes)
+            Err(JvmError::TrailingBytes)
         } else {
             Ok(Self {
                 minor_version,
@@ -106,19 +119,13 @@ impl TryFrom<Vec<u8>> for ClassFile {
 impl fmt::Display for ClassFile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "ClassFile {{")?;
-        writeln!(
-            f,
-            "  version: {}.{}",
-            self.major_version, self.minor_version
-        )?;
-        writeln!(f, "  access_flags: {}", self.access_flags)?;
-        writeln!(f, "  this_class: {}", self.this_class)?;
-        writeln!(f, "  super_class: {}", self.super_class)?;
+        writeln!(f, "  minor version: {}", self.minor_version)?;
+        writeln!(f, "  major version: {}", self.major_version)?;
+        writeln!(f, "  access_flags: 0x{:04X}", self.access_flags)?;
+        writeln!(f, "  this_class: #{}", self.this_class)?;
+        writeln!(f, "  super_class: #{}", self.super_class)?;
 
-        writeln!(f, "  constant_pool ({}):", self.constant_pool.len())?;
-        for (i, item) in self.constant_pool.iter().enumerate() {
-            writeln!(f, "    {}: {}", i + 1, item)?;
-        }
+        writeln!(f, "  constant_pool:\n{}", self.constant_pool)?;
 
         writeln!(
             f,
@@ -148,8 +155,6 @@ impl fmt::Display for ClassFile {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn it_works() {}
 }
