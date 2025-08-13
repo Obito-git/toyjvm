@@ -1,9 +1,10 @@
-use crate::class_file::constant_pool::{ClassReference, ConstantInfo};
-use crate::class_file::{ClassFile, JvmError};
 use crate::runtime::method_area::java::access::class::ClassAccessFlag;
 use crate::runtime::method_area::java::field::Field;
 use crate::runtime::method_area::java::method::Method;
 use std::rc::Rc;
+use class_file::ClassFile;
+use class_file::constant_pool::{ClassReference, ConstantInfo};
+use crate::JvmError;
 
 #[derive(Debug)]
 pub struct Class {

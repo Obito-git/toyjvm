@@ -1,7 +1,7 @@
 use core::fmt;
-use crate::class_file::cursor::Cursor;
-use crate::class_file::JvmError;
-use crate::runtime::data::runtime_constant_pool::RuntimeConstantPool;
+use common::ByteCursor;
+use crate::ClassFileErr;
+use crate::runtime_constant_pool::RuntimeConstantPool;
 
 #[derive(Debug)]
 pub struct FieldInfo {
@@ -14,8 +14,8 @@ pub struct FieldInfo {
 impl<'a> FieldInfo {
     pub(crate) fn read(
         _constant_pool: &RuntimeConstantPool,
-        cursor: &mut Cursor<'a>,
-    ) -> Result<Self, JvmError> {
+        cursor: &mut ByteCursor<'a>,
+    ) -> Result<Self, ClassFileErr> {
         let access_flags = cursor.u16()?;
         let name_index = cursor.u16()?;
         let descriptor_index = cursor.u16()?;

@@ -1,10 +1,10 @@
-use crate::class_file::JvmError;
-use crate::class_file::cursor::Cursor;
-use crate::runtime::data::descriptor::MethodDescriptor;
-use crate::runtime::method_area::java::jtype::Type;
 use core::fmt;
-use num_enum::TryFromPrimitive;
 use std::rc::Rc;
+use num_enum::TryFromPrimitive;
+use common::ByteCursor;
+use crate::descriptor::MethodDescriptor;
+use crate::jtype::Type;
+use crate::ClassFileErr;
 
 type OnceCell<I> = once_cell::unsync::OnceCell<I>;
 //type OnceCell<I> = once_cell::sync::OnceCell<I>;
@@ -169,10 +169,10 @@ pub enum ConstantInfo {
 }
 
 impl<'a> ConstantInfo {
-    pub(crate) fn read(cursor: &mut Cursor<'a>) -> Result<Self, JvmError> {
+    pub(crate) fn read(cursor: &mut ByteCursor<'a>) -> Result<Self, ClassFileErr> {
         let raw_tag = cursor.u8()?;
         let tag =
-            ConstantTag::try_from_primitive(raw_tag).map_err(|_| JvmError::UnknownTag(raw_tag))?;
+            ConstantTag::try_from_primitive(raw_tag).map_err(|_| ClassFileErr::UnknownTag(raw_tag))?;
         let const_info = match tag {
             ConstantTag::Utf8 => {
                 let len = cursor.u16()?;

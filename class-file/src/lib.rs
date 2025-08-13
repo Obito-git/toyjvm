@@ -1,16 +1,19 @@
-use crate::class_file::attribute::ClassAttribute;
-use crate::runtime::data::runtime_constant_pool::RuntimeConstantPool;
 use constant_pool::ConstantInfo;
-use cursor::Cursor;
 use field::FieldInfo;
 use method::MethodInfo;
 use std::fmt;
+use thiserror::Error;
+use common::{ByteCursor, CursorError};
+use crate::attribute::ClassAttribute;
+use crate::runtime_constant_pool::RuntimeConstantPool;
 
 pub mod attribute;
 pub mod constant_pool;
-pub mod cursor;
-mod field;
+pub mod field;
 pub mod method;
+pub mod runtime_constant_pool;
+pub mod descriptor;
+pub mod jtype;
 
 /// https://docs.oracle.com/javase/specs/jvms/se23/html/jvms-4.html
 #[derive(Debug)]
@@ -27,41 +30,52 @@ pub struct ClassFile {
     pub attributes: Vec<ClassAttribute>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum MethodDescriptorErr {
+    #[error("")]
     ShouldStartWithParentheses,
+    #[error("")]
     MissingClosingParenthesis,
+    #[error("")]
     UnexpectedEnd,
+    #[error("")]
     InvalidType,
+    #[error("")]
     TrailingCharacters,
 }
 
-#[derive(Debug)]
-pub enum JvmError {
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ClassFileErr {
+    #[error(transparent)]
+    Cursor(#[from] CursorError),
+    #[error(transparent)]
+    MethodDescriptor(#[from] MethodDescriptorErr),
+    #[error("")]
     WrongMagic,
-    UnexpectedEof,
-    UnknownTag(u8),
+    #[error("")]
     TrailingBytes,
-    MissingAttributeInConstantPoll,
-    TypeError,
-    MethodDescriptor(MethodDescriptorErr),
-    ConstantNotFoundInRuntimePool,
+    #[error("")]
+    UnknownTag(u8),
+    #[error("")]
+    TypeError
 }
+
+
 
 impl ClassFile {
     const MAGIC: u32 = 0xCAFEBABE;
-    fn validate_magic(val: u32) -> Result<(), JvmError> {
+    fn validate_magic(val: u32) -> Result<(), ClassFileErr> {
         (val == ClassFile::MAGIC)
             .then_some(())
-            .ok_or(JvmError::WrongMagic)
+            .ok_or(ClassFileErr::WrongMagic)
     }
 }
 
 impl TryFrom<Vec<u8>> for ClassFile {
-    type Error = JvmError;
+    type Error = ClassFileErr;
 
     fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        let mut cursor = Cursor::new(&value);
+        let mut cursor = ByteCursor::new(&value);
         let magic = cursor.u32()?;
         ClassFile::validate_magic(magic)?;
         let minor_version = cursor.u16()?;
@@ -98,7 +112,7 @@ impl TryFrom<Vec<u8>> for ClassFile {
         }
 
         if cursor.u8().is_ok() {
-            Err(JvmError::TrailingBytes)
+            Err(ClassFileErr::TrailingBytes)
         } else {
             Ok(Self {
                 minor_version,

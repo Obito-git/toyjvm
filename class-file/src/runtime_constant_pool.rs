@@ -1,13 +1,11 @@
-use crate::class_file::JvmError;
-use crate::class_file::constant_pool::{
+use crate::ClassFileErr;
+use crate::constant_pool::{
     ClassReference, ConstantInfo, FieldReference, MethodReference, NameAndTypeReference,
     StringReference,
 };
-use crate::runtime::data::descriptor::MethodDescriptor;
-use crate::runtime::method_area::java::jtype::Type;
+use crate::descriptor::MethodDescriptor;
+use crate::jtype::Type;
 use dashmap::DashMap;
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
@@ -26,11 +24,13 @@ impl RuntimeConstantPool {
         }
     }
 
-    fn entry(&self, idx: u16) -> Result<&ConstantInfo, JvmError> {
-        self.entries.get(idx as usize).ok_or(JvmError::TypeError) //TODO: Err
+    fn entry(&self, idx: u16) -> Result<&ConstantInfo, ClassFileErr> {
+        self.entries
+            .get(idx as usize)
+            .ok_or(ClassFileErr::TypeError) //TODO: Err
     }
 
-    pub fn get_method_descriptor(&self, idx: u16) -> Result<Rc<MethodDescriptor>, JvmError> {
+    pub fn get_method_descriptor(&self, idx: u16) -> Result<Rc<MethodDescriptor>, ClassFileErr> {
         if let Some(method_descriptor) = self.method_descriptors.get(&idx) {
             return Ok(method_descriptor.clone());
         }
@@ -41,100 +41,108 @@ impl RuntimeConstantPool {
         Ok(method_descriptor)
     }
 
-    pub fn get_utf8(&self, idx: u16) -> Result<&Rc<String>, JvmError> {
+    pub fn get_utf8(&self, idx: u16) -> Result<&Rc<String>, ClassFileErr> {
         match self.entry(idx)? {
             ConstantInfo::Utf8(string) => Ok(string),
-            _ => Err(JvmError::TypeError),
+            _ => Err(ClassFileErr::TypeError),
         }
     }
 
-    pub fn get_string(&self, idx: u16) -> Result<&Rc<StringReference>, JvmError> {
+    pub fn get_string(&self, idx: u16) -> Result<&Rc<StringReference>, ClassFileErr> {
         match self.entry(idx)? {
             ConstantInfo::String(string_ref) => {
-                string_ref
-                    .value
-                    .get_or_try_init(|| Ok(self.get_utf8(string_ref.string_index)?.clone()))?;
+                string_ref.value.get_or_try_init::<_, ClassFileErr>(|| {
+                    Ok(self.get_utf8(string_ref.string_index)?.clone())
+                })?;
                 Ok(string_ref)
             }
-            _ => Err(JvmError::TypeError),
+            _ => Err(ClassFileErr::TypeError),
         }
     }
 
-    pub fn get_class(&self, idx: u16) -> Result<&Rc<ClassReference>, JvmError> {
+    pub fn get_class(&self, idx: u16) -> Result<&Rc<ClassReference>, ClassFileErr> {
         match self.entry(idx)? {
             ConstantInfo::Class(class_ref) => {
-                class_ref
-                    .name
-                    .get_or_try_init(|| Ok(self.get_utf8(class_ref.name_index)?.clone()))?;
+                class_ref.name.get_or_try_init::<_, ClassFileErr>(|| {
+                    Ok(self.get_utf8(class_ref.name_index)?.clone())
+                })?;
                 Ok(class_ref)
             }
-            _ => Err(JvmError::TypeError),
+            _ => Err(ClassFileErr::TypeError),
         }
     }
 
-    pub fn get_method_nat(&self, idx: u16) -> Result<&Rc<NameAndTypeReference>, JvmError> {
+    pub fn get_method_nat(&self, idx: u16) -> Result<&Rc<NameAndTypeReference>, ClassFileErr> {
         match self.entry(idx)? {
             ConstantInfo::NameAndType(method_nat) => {
-                method_nat
-                    .name
-                    .get_or_try_init(|| Ok(self.get_utf8(method_nat.name_index)?.clone()))?;
+                method_nat.name.get_or_try_init::<_, ClassFileErr>(|| {
+                    Ok(self.get_utf8(method_nat.name_index)?.clone())
+                })?;
                 method_nat
                     .raw_descriptor
-                    .get_or_try_init(|| Ok(self.get_utf8(method_nat.descriptor_index)?.clone()))?;
-                method_nat.resolved_method.get_or_try_init(|| {
-                    Ok(self.get_method_descriptor(method_nat.descriptor_index)?)
-                })?;
+                    .get_or_try_init::<_, ClassFileErr>(|| {
+                        Ok(self.get_utf8(method_nat.descriptor_index)?.clone())
+                    })?;
+                method_nat
+                    .resolved_method
+                    .get_or_try_init::<_, ClassFileErr>(|| {
+                        Ok(self.get_method_descriptor(method_nat.descriptor_index)?)
+                    })?;
                 Ok(method_nat)
             }
-            _ => Err(JvmError::TypeError),
+            _ => Err(ClassFileErr::TypeError),
         }
     }
 
-    pub fn get_field_nat(&self, idx: u16) -> Result<&Rc<NameAndTypeReference>, JvmError> {
+    pub fn get_field_nat(&self, idx: u16) -> Result<&Rc<NameAndTypeReference>, ClassFileErr> {
         match self.entry(idx)? {
             ConstantInfo::NameAndType(field_nat) => {
-                field_nat
-                    .name
-                    .get_or_try_init(|| Ok(self.get_utf8(field_nat.name_index)?.clone()))?;
-                let descriptor = field_nat
-                    .raw_descriptor
-                    .get_or_try_init(|| Ok(self.get_utf8(field_nat.descriptor_index)?.clone()))?;
-                field_nat
-                    .resolved_field
-                    .get_or_try_init(|| Ok(Rc::new(Type::try_from(descriptor.as_str())?)))?;
+                field_nat.name.get_or_try_init(|| {
+                    Ok::<_, ClassFileErr>(self.get_utf8(field_nat.name_index)?.clone())
+                })?;
+                let descriptor = field_nat.raw_descriptor.get_or_try_init(|| {
+                    Ok::<_, ClassFileErr>(self.get_utf8(field_nat.descriptor_index)?.clone())
+                })?;
+                field_nat.resolved_field.get_or_try_init(|| {
+                    Ok::<_, ClassFileErr>(Rc::new(Type::try_from(descriptor.as_str())?))
+                })?;
                 Ok(field_nat)
             }
-            _ => Err(JvmError::TypeError),
+            _ => Err(ClassFileErr::TypeError),
         }
     }
 
-    pub fn get_methodref(&self, idx: u16) -> Result<&Rc<MethodReference>, JvmError> {
+    pub fn get_methodref(&self, idx: u16) -> Result<&Rc<MethodReference>, ClassFileErr> {
         match self.entry(idx)? {
             ConstantInfo::MethodRef(method_ref) => {
-                method_ref
-                    .class
-                    .get_or_try_init(|| Ok(self.get_class(method_ref.class_index)?.clone()))?;
-                method_ref.name_and_type.get_or_try_init(|| {
-                    Ok(self.get_method_nat(method_ref.name_and_type_index)?.clone())
+                method_ref.class.get_or_try_init(|| {
+                    Ok::<_, ClassFileErr>(self.get_class(method_ref.class_index)?.clone())
                 })?;
+                method_ref
+                    .name_and_type
+                    .get_or_try_init::<_, ClassFileErr>(|| {
+                        Ok(self.get_method_nat(method_ref.name_and_type_index)?.clone())
+                    })?;
                 Ok(method_ref)
             }
-            _ => Err(JvmError::TypeError),
+            _ => Err(ClassFileErr::TypeError),
         }
     }
 
-    pub fn get_fieldref(&self, idx: u16) -> Result<&Rc<FieldReference>, JvmError> {
+    pub fn get_fieldref(&self, idx: u16) -> Result<&Rc<FieldReference>, ClassFileErr> {
         match self.entry(idx)? {
             ConstantInfo::FieldRef(field_ref) => {
-                field_ref
-                    .class
-                    .get_or_try_init(|| Ok(self.get_class(field_ref.class_index)?.clone()))?;
-                field_ref.name_and_type.get_or_try_init(|| {
-                    Ok(self.get_method_nat(field_ref.name_and_type_index)?.clone())
+                field_ref.class.get_or_try_init::<_, ClassFileErr>(|| {
+                    Ok(self.get_class(field_ref.class_index)?.clone())
                 })?;
+                field_ref
+                    .name_and_type
+                    .get_or_try_init::<_, ClassFileErr>(|| {
+                        Ok(self.get_method_nat(field_ref.name_and_type_index)?.clone())
+                    })?;
                 Ok(field_ref)
             }
-            _ => Err(JvmError::TypeError),
+            _ => Err(ClassFileErr::TypeError),
         }
     }
 }

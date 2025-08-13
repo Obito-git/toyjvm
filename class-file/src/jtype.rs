@@ -1,5 +1,5 @@
-use crate::class_file::{JvmError, MethodDescriptorErr};
 use std::iter::Peekable;
+use crate::{ClassFileErr, MethodDescriptorErr};
 
 /// https://docs.oracle.com/javase/specs/jvms/se23/html/jvms-4.html#jvms-4.3.2
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,11 +18,11 @@ pub enum Type {
 }
 
 impl Type {
-    pub fn try_recursive<I>(it: &mut Peekable<I>) -> Result<Type, JvmError>
+    pub fn try_recursive<I>(it: &mut Peekable<I>) -> Result<Type, ClassFileErr>
     where
         I: Iterator<Item = char>,
     {
-        let c = it.next().ok_or(JvmError::MethodDescriptor(
+        let c = it.next().ok_or(ClassFileErr::MethodDescriptor(
             MethodDescriptorErr::UnexpectedEnd,
         ))?;
 
@@ -40,7 +40,7 @@ impl Type {
                     }
                     instance_name.push(next);
                 }
-                Err(JvmError::MethodDescriptor(
+                Err(ClassFileErr::MethodDescriptor(
                     MethodDescriptorErr::UnexpectedEnd,
                 ))
             }
@@ -48,13 +48,13 @@ impl Type {
                 let elem = Type::try_recursive(it)?;
                 Ok(Type::Array(Box::new(elem)))
             }
-            _ => Err(JvmError::MethodDescriptor(MethodDescriptorErr::InvalidType)),
+            _ => Err(ClassFileErr::MethodDescriptor(MethodDescriptorErr::InvalidType)),
         }
     }
 }
 
 impl TryFrom<&str> for Type {
-    type Error = JvmError; // todo
+    type Error = ClassFileErr; // todo
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Type::try_recursive(&mut value.chars().peekable())
@@ -84,12 +84,12 @@ impl TryFrom<char> for Type {
 mod tests {
     use super::*;
 
-    fn parse_one(s: &str) -> Result<Type, JvmError> {
+    fn parse_one(s: &str) -> Result<Type, ClassFileErr> {
         let mut it = s.chars().peekable();
         Type::try_recursive(&mut it)
     }
 
-    fn parse_and_rest(s: &str) -> (Result<Type, JvmError>, String) {
+    fn parse_and_rest(s: &str) -> (Result<Type, ClassFileErr>, String) {
         let mut it = s.chars().peekable();
         let res = Type::try_recursive(&mut it);
         let rest: String = it.collect();
@@ -162,7 +162,7 @@ mod tests {
         let err = parse_one("Ljava/lang/String").unwrap_err();
         assert!(matches!(
             err,
-            JvmError::MethodDescriptor(MethodDescriptorErr::UnexpectedEnd)
+            ClassFileErr::MethodDescriptor(MethodDescriptorErr::UnexpectedEnd)
         ));
     }
 
@@ -171,7 +171,7 @@ mod tests {
         let err = parse_one("[").unwrap_err();
         assert!(matches!(
             err,
-            JvmError::MethodDescriptor(MethodDescriptorErr::UnexpectedEnd)
+            ClassFileErr::MethodDescriptor(MethodDescriptorErr::UnexpectedEnd)
         ));
     }
 
@@ -180,7 +180,7 @@ mod tests {
         let err = parse_one("Q").unwrap_err();
         assert!(matches!(
             err,
-            JvmError::MethodDescriptor(MethodDescriptorErr::InvalidType)
+            ClassFileErr::MethodDescriptor(MethodDescriptorErr::InvalidType)
         ));
     }
 

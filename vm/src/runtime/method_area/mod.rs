@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::class_file::ClassFile;
+use class_file::ClassFile;
 
 pub mod java;
 

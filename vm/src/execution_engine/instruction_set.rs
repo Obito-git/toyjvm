@@ -1,6 +1,6 @@
 use num_enum::TryFromPrimitive;
-use crate::class_file::cursor::Cursor;
-use crate::class_file::JvmError;
+use common::ByteCursor;
+use crate::JvmError;
 
 /// https://docs.oracle.com/javase/specs/jvms/se23/html/jvms-6.html
 #[derive(Debug, Clone, Copy, TryFromPrimitive)]
@@ -26,7 +26,7 @@ pub enum Instruction {
 
 impl Instruction {
     pub fn new_instruction_set(code: &Vec<u8>) -> Result<Vec<Instruction>, JvmError> {
-        let mut cursor = Cursor::new(code.as_slice());
+        let mut cursor = ByteCursor::new(code.as_slice());
         let mut res = Vec::new();
         
         while let Some(opcode_byte) = cursor.try_u8() {

@@ -1,7 +1,7 @@
 use std::fmt::{self, Display, Formatter};
-use crate::class_file::cursor::Cursor;
-use crate::class_file::{JvmError};
-use crate::runtime::data::runtime_constant_pool::RuntimeConstantPool;
+use common::ByteCursor;
+use crate::ClassFileErr;
+use crate::runtime_constant_pool::RuntimeConstantPool;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ExceptionTableEntry {
@@ -65,8 +65,8 @@ pub const ATTR_SOURCE_FILE: &[u8] = b"SourceFile";
 impl<'a> ClassAttribute {
     pub(crate) fn read(
         constant_pool: &RuntimeConstantPool,
-        cursor: &mut Cursor<'a>,
-    ) -> Result<Self, JvmError> {
+        cursor: &mut ByteCursor<'a>,
+    ) -> Result<Self, ClassFileErr> {
         let attribute_name_index = cursor.u16()?;
         let attribute_length = cursor.u32()? as usize;
 
@@ -90,8 +90,8 @@ impl<'a> ClassAttribute {
 impl<'a> MethodAttribute {
     pub(crate) fn read(
         constant_pool: &RuntimeConstantPool,
-        cursor: &mut Cursor<'a>,
-    ) -> Result<Self, JvmError> {
+        cursor: &mut ByteCursor<'a>,
+    ) -> Result<Self, ClassFileErr> {
         let attribute_name_index = cursor.u16()?;
         let attribute_length = cursor.u32()? as usize;
 
@@ -145,8 +145,8 @@ impl<'a> MethodAttribute {
 impl<'a> CodeAttribute {
     pub(crate) fn read(
         constant_pool: &RuntimeConstantPool,
-        cursor: &mut Cursor<'a>,
-    ) -> Result<Self, JvmError> {
+        cursor: &mut ByteCursor<'a>,
+    ) -> Result<Self, ClassFileErr> {
         let attribute_name_index = cursor.u16()?;
         let attribute_length = cursor.u32()? as usize;
 
