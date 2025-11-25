@@ -15,10 +15,10 @@ pub struct Interpreter;
 
 #[cfg_attr(feature = "hotpath", hotpath::measure_all)]
 impl Interpreter {
-    pub(crate) fn branch16(bci: usize, off: i16) -> usize {
+    pub(super) fn branch16(bci: usize, off: i16) -> usize {
         ((bci as isize) + (off as isize)) as usize
     }
-    pub(crate) fn branch32(bci: usize, off: i32) -> usize {
+    pub(super) fn branch32(bci: usize, off: i32) -> usize {
         ((bci as isize) + (off as isize)) as usize
     }
 
@@ -523,7 +523,7 @@ impl Interpreter {
         Ok(instance)
     }
 
-    pub(crate) fn prepare_method_args(
+    pub(super) fn prepare_method_args(
         thread_id: ThreadId,
         method_id: MethodId,
         vm: &mut VirtualMachine,
@@ -678,7 +678,7 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn invoke_method_internal(
+    pub(super) fn invoke_method_internal(
         thread_id: ThreadId,
         method_id: MethodId,
         args: Vec<Value>,
@@ -736,7 +736,7 @@ impl Interpreter {
         Ok(())
     }
 
-    pub(crate) fn ensure_initialized(
+    pub(super) fn ensure_initialized(
         thread_id: ThreadId,
         class_id: Option<ClassId>,
         vm: &mut VirtualMachine,
